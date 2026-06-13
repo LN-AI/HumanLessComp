@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useState } from "react";
+import { ChangeEvent, DragEvent, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES,
@@ -6,12 +6,14 @@ import {
 } from "@paperclipai/shared";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useTheme } from "../context/ThemeContext";
 import { companiesApi } from "../api/companies";
 import { assetsApi } from "../api/assets";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Settings, CloudUpload, Download, Upload } from "lucide-react";
+import { Settings, CloudUpload, Download, Upload, AlertTriangle, Palette, Users, Package, RotateCcw, Lock, Monitor, Shield } from "lucide-react";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
 import {
   Field,
@@ -21,6 +23,29 @@ import {
 const BYTES_PER_MIB = 1024 * 1024;
 const DEFAULT_COMPANY_ATTACHMENT_MAX_MIB = DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES / BYTES_PER_MIB;
 const MAX_COMPANY_ATTACHMENT_MAX_MIB = MAX_COMPANY_ATTACHMENT_MAX_BYTES / BYTES_PER_MIB;
+
+type SettingsSection = "general" | "appearance" | "hiring" | "packages" | "secrets" | "instance-general" | "access-control";
+
+interface NavItem {
+  id: SettingsSection;
+  label: string;
+  icon: React.ElementType;
+  href?: string;
+}
+
+const companyNavItems: NavItem[] = [
+  { id: "general", label: "General", icon: Settings },
+  { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "hiring", label: "Hiring", icon: Users },
+  { id: "packages", label: "Packages", icon: Package },
+  { id: "secrets", label: "Secrets", icon: Lock, href: "/company/secrets" },
+];
+
+const instanceNavItems: NavItem[] = [
+  { id: "instance-general", label: "General", icon: Monitor, href: "/company/settings/instance" },
+  { id: "access-control", label: "Access Control", icon: Shield, href: "/company/settings/instance" },
+];
+
 export function CompanySettings() {
   const {
     companies,
@@ -29,20 +54,36 @@ export function CompanySettings() {
     setSelectedCompanyId
   } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const { theme, setTheme } = useTheme();
   const queryClient = useQueryClient();
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
   });
-  // General settings local state
   const [companyName, setCompanyName] = useState("");
   const [description, setDescription] = useState("");
   const [brandColor, setBrandColor] = useState("");
   const [attachmentMaxMiB, setAttachmentMaxMiB] = useState(String(DEFAULT_COMPANY_ATTACHMENT_MAX_MIB));
   const [logoUrl, setLogoUrl] = useState("");
   const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<SettingsSection>("general");
+  const [compactSidebar, setCompactSidebar] = useState(false);
+  const [showAgentStatusDots, setShowAgentStatusDots] = useState(true);
+  const [animatedTransitions, setAnimatedTransitions] = useState(true);
+  const [isDragOver, setIsDragOver] = useState(false);
 
-  // Sync local state from selected company
+  const generalRef = useRef<HTMLDivElement>(null);
+  const appearanceRef = useRef<HTMLDivElement>(null);
+  const hiringRef = useRef<HTMLDivElement>(null);
+  const packagesRef = useRef<HTMLDivElement>(null);
+
+  const sectionRefs: Record<string, React.RefObject<HTMLDivElement | null>> = {
+    general: generalRef,
+    appearance: appearanceRef,
+    hiring: hiringRef,
+    packages: packagesRef,
+  };
+
   useEffect(() => {
     if (!selectedCompany) return;
     setCompanyName(selectedCompany.name);
@@ -120,6 +161,29 @@ export function CompanySettings() {
     logoUploadMutation.mutate(file);
   }
 
+  function handleLogoDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDragOver(false);
+    const file = event.dataTransfer.files?.[0] ?? null;
+    if (!file) return;
+    if (!file.type.match(/^image\/(png|jpeg|webp|gif|svg\+xml)$/)) {
+      setLogoUploadError("Invalid file type. Please upload a PNG, JPEG, WEBP, GIF, or SVG image.");
+      return;
+    }
+    setLogoUploadError(null);
+    logoUploadMutation.mutate(file);
+  }
+
+  function handleDragOver(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDragOver(true);
+  }
+
+  function handleDragLeave(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDragOver(false);
+  }
+
   function handleClearLogo() {
     clearLogoMutation.mutate();
   }
@@ -169,109 +233,216 @@ export function CompanySettings() {
     });
   }
 
+  function handleDiscard() {
+    if (!selectedCompany) return;
+    setCompanyName(selectedCompany.name);
+    setDescription(selectedCompany.description ?? "");
+    setBrandColor(selectedCompany.brandColor ?? "");
+    setAttachmentMaxMiB(String(Math.round((selectedCompany.attachmentMaxBytes ?? DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES) / BYTES_PER_MIB)));
+  }
+
+  function handleNavClick(item: NavItem) {
+    if (item.href) return; // let the anchor handle navigation
+    setActiveSection(item.id);
+    const ref = sectionRefs[item.id];
+    if (ref?.current) {
+      ref.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  function renderNavItem(item: NavItem) {
+    const isActive = activeSection === item.id;
+    const Icon = item.icon;
+
+    const content = (
+      <>
+        <Icon className="h-4 w-4 shrink-0" />
+        <span className="text-sm">{item.label}</span>
+      </>
+    );
+
+    const className = cn(
+      "flex items-center gap-2.5 px-3 py-2 rounded-lg transition-colors cursor-pointer",
+      isActive
+        ? "bg-[rgba(99,102,241,0.12)] text-[#818CF8]"
+        : "text-muted-foreground hover:bg-[#1E2130] hover:text-foreground"
+    );
+
+    if (item.href) {
+      return (
+        <a key={item.id} href={item.href} className={className} onClick={() => setActiveSection(item.id)}>
+          {content}
+        </a>
+      );
+    }
+
+    return (
+      <button key={item.id} className={className} onClick={() => handleNavClick(item)}>
+        {content}
+      </button>
+    );
+  }
+
   return (
-    <div className="max-w-2xl space-y-6">
-      <div className="flex items-center gap-2">
-        <Settings className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-lg font-semibold">Company Settings</h1>
-      </div>
-
-      {/* General */}
-      <div className="space-y-4">
-        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          General
+    <div className="flex gap-0 -m-6">
+      {/* Settings Navigation */}
+      <div className="w-60 bg-sidebar border-r border-border p-6 shrink-0">
+        <div className="space-y-1">
+          <div className="px-3 pb-2 pt-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Company Settings
+          </div>
+          {companyNavItems.map(renderNavItem)}
         </div>
-        <div className="space-y-3 rounded-md border border-border px-4 py-4">
-          <Field label="Company name" hint="The display name for your company.">
-            <input
-              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
-              type="text"
-              value={companyName}
-              onChange={(e) => setCompanyName(e.target.value)}
-            />
-          </Field>
-          <Field
-            label="Description"
-            hint="Optional description shown in the company profile."
-          >
-            <input
-              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
-              type="text"
-              value={description}
-              placeholder="Optional company description"
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </Field>
+
+        <div className="my-4 border-t border-border" />
+
+        <div className="space-y-1">
+          <div className="px-3 pb-2 pt-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Instance Settings
+          </div>
+          {instanceNavItems.map(renderNavItem)}
         </div>
       </div>
 
-      {/* Appearance */}
-      <div className="space-y-4">
-        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Appearance
+      {/* Settings Content */}
+      <div className="flex-1 p-8 max-w-2xl space-y-6">
+        {/* Page Header */}
+        <div>
+          <h1 className="text-xl font-bold text-foreground">Company Settings</h1>
+          <p className="text-sm text-muted-foreground mt-1">Manage your organization's profile, appearance, and configuration</p>
         </div>
-        <div className="space-y-3 rounded-md border border-border px-4 py-4">
-          <div className="flex items-start gap-4">
-            <div className="shrink-0">
-              <CompanyPatternIcon
-                companyName={companyName || selectedCompany.name}
-                logoUrl={logoUrl || null}
-                brandColor={brandColor || null}
-                className="rounded-[14px]"
-              />
+
+        {/* General Card */}
+        <div id="settings-general" ref={generalRef} className="rounded-[14px] border border-border p-6 bg-card">
+          <div className="flex items-center gap-3 pb-4 mb-5 border-b border-border">
+            <div className="h-10 w-10 rounded-[10px] bg-primary/15 flex items-center justify-center shrink-0">
+              <Settings className="h-5 w-5 text-primary" />
             </div>
-            <div className="flex-1 space-y-3">
-              <Field
-                label="Logo"
-                hint="Upload a PNG, JPEG, WEBP, GIF, or SVG logo image."
-              >
-                <div className="space-y-2">
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
-                    onChange={handleLogoFileChange}
-                    className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none file:mr-4 file:rounded-md file:border-0 file:bg-muted file:px-2.5 file:py-1 file:text-xs"
-                  />
-                  {logoUrl && (
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleClearLogo}
-                        disabled={clearLogoMutation.isPending}
-                      >
-                        {clearLogoMutation.isPending ? "Removing..." : "Remove logo"}
-                      </Button>
-                    </div>
-                  )}
-                  {(logoUploadMutation.isError || logoUploadError) && (
-                    <span className="text-xs text-destructive">
-                      {logoUploadError ??
-                        (logoUploadMutation.error instanceof Error
-                          ? logoUploadMutation.error.message
-                          : "Logo upload failed")}
-                    </span>
-                  )}
-                  {clearLogoMutation.isError && (
-                    <span className="text-xs text-destructive">
-                      {clearLogoMutation.error.message}
-                    </span>
-                  )}
-                  {logoUploadMutation.isPending && (
-                    <span className="text-xs text-muted-foreground">Uploading logo...</span>
-                  )}
-                </div>
+            <div>
+              <h2 className="text-base font-semibold text-foreground">General</h2>
+              <p className="text-xs text-muted-foreground">Basic organization information and branding</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label="Company Name" hint="The display name for your company.">
+                <input
+                  className="w-full rounded-[10px] border border-border bg-secondary/50 px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/15 placeholder:text-muted-foreground/50"
+                  type="text"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                />
               </Field>
+              <Field label="Description" hint="Optional description shown in the company profile.">
+                <input
+                  className="w-full rounded-[10px] border border-border bg-secondary/50 px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/15 placeholder:text-muted-foreground/50"
+                  type="text"
+                  value={description}
+                  placeholder="Optional company description"
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+              </Field>
+            </div>
+          </div>
+        </div>
+
+        {/* Appearance Card */}
+        <div id="settings-appearance" ref={appearanceRef} className="rounded-[14px] border border-border p-6 bg-card">
+          <div className="flex items-center gap-3 pb-4 mb-5 border-b border-border">
+            <div className="h-10 w-10 rounded-[10px] bg-cyan-500/15 flex items-center justify-center shrink-0">
+              <Palette className="h-5 w-5 text-cyan-500" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Appearance</h2>
+              <p className="text-xs text-muted-foreground">Customize the visual theme and branding</p>
+            </div>
+          </div>
+
+          <div className="space-y-5">
+            {/* Logo upload */}
+            <div className="flex items-start gap-4">
+              <div className="shrink-0">
+                <CompanyPatternIcon
+                  companyName={companyName || selectedCompany.name}
+                  logoUrl={logoUrl || null}
+                  brandColor={brandColor || null}
+                  className="rounded-[14px]"
+                />
+              </div>
+              <div className="flex-1 space-y-3">
+                <Field
+                  label="Logo"
+                  hint="Upload a PNG, JPEG, WEBP, GIF, or SVG logo image."
+                >
+                  <div className="space-y-2">
+                    <div
+                      className={cn(
+                        "flex items-center gap-3 p-3.5 rounded-[10px] border border-dashed transition-colors cursor-pointer",
+                        isDragOver
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:border-primary bg-secondary/30"
+                      )}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleLogoDrop}
+                    >
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                        onChange={handleLogoFileChange}
+                        className="hidden"
+                        id="logo-upload"
+                      />
+                      <label htmlFor="logo-upload" className="flex items-center gap-2 cursor-pointer text-sm">
+                        <Upload className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-primary font-medium">Click to upload</span>
+                        <span className="text-muted-foreground">or drag and drop</span>
+                      </label>
+                    </div>
+                    {logoUrl && (
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleClearLogo}
+                          disabled={clearLogoMutation.isPending}
+                        >
+                          {clearLogoMutation.isPending ? "Removing..." : "Remove logo"}
+                        </Button>
+                      </div>
+                    )}
+                    {(logoUploadMutation.isError || logoUploadError) && (
+                      <span className="text-xs text-destructive">
+                        {logoUploadError ??
+                          (logoUploadMutation.error instanceof Error
+                            ? logoUploadMutation.error.message
+                            : "Logo upload failed")}
+                      </span>
+                    )}
+                    {clearLogoMutation.isError && (
+                      <span className="text-xs text-destructive">
+                        {clearLogoMutation.error.message}
+                      </span>
+                    )}
+                    {logoUploadMutation.isPending && (
+                      <span className="text-xs text-muted-foreground">Uploading logo...</span>
+                    )}
+                  </div>
+                </Field>
+              </div>
+            </div>
+
+            {/* Brand color */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field
-                label="Brand color"
-                hint="Sets the hue for the company icon. Leave empty for auto-generated color."
+                label="Brand Color"
+                hint="Sets the hue for the company icon."
               >
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={brandColor || "#6366f1"}
-                    onChange={(e) => setBrandColor(e.target.value)}
-                    className="h-8 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className="h-10 w-10 rounded-[10px] border-2 border-border cursor-pointer shrink-0"
+                    style={{ backgroundColor: brandColor || "#6366f1" }}
                   />
                   <input
                     type="text"
@@ -282,8 +453,8 @@ export function CompanySettings() {
                         setBrandColor(v);
                       }
                     }}
-                    placeholder="Auto"
-                    className="w-28 rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm font-mono outline-none"
+                    placeholder="#6366f1"
+                    className="flex-1 rounded-[10px] border border-border bg-secondary/50 px-3.5 py-2.5 text-sm font-mono outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/15"
                   />
                   {brandColor && (
                     <Button
@@ -298,63 +469,135 @@ export function CompanySettings() {
                 </div>
               </Field>
               <Field
-                label="Attachment size limit"
+                label="Attachment Size Limit"
                 hint={`Accepted range: 1-${MAX_COMPANY_ATTACHMENT_MAX_MIB} MiB.`}
               >
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={1}
-                      max={MAX_COMPANY_ATTACHMENT_MAX_MIB}
-                      step={1}
-                      value={attachmentMaxMiB}
-                      onChange={(e) => setAttachmentMaxMiB(e.target.value)}
-                      className="w-28 rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
-                    />
-                    <span className="text-xs text-muted-foreground">MiB</span>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={MAX_COMPANY_ATTACHMENT_MAX_MIB}
+                    step={1}
+                    value={attachmentMaxMiB}
+                    onChange={(e) => setAttachmentMaxMiB(e.target.value)}
+                    className="w-28 rounded-[10px] border border-border bg-secondary/50 px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/15"
+                  />
+                  <span className="text-xs text-muted-foreground">MiB</span>
                   {!attachmentMaxValid && (
                     <span className="text-xs text-destructive">
-                      Enter a whole number from 1 to {MAX_COMPANY_ATTACHMENT_MAX_MIB}.
+                      1-{MAX_COMPANY_ATTACHMENT_MAX_MIB}
                     </span>
                   )}
                 </div>
               </Field>
             </div>
+
+            {/* Appearance Toggles */}
+            <div className="border-t border-border pt-1">
+              <div className="text-sm font-semibold text-foreground mb-2 pt-4">Display Preferences</div>
+
+              {/* Dark Mode Toggle */}
+              <div className="flex items-center justify-between py-3.5 border-b border-border">
+                <div>
+                  <div className="text-sm font-medium text-foreground">Dark Mode</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">Use dark color scheme throughout the application</div>
+                </div>
+                <button
+                  onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                  className={cn(
+                    "h-6 w-11 rounded-full transition-colors relative",
+                    theme === "dark" ? "bg-primary" : "bg-muted"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute h-[18px] w-[18px] rounded-full bg-white top-[3px] transition-all",
+                      theme === "dark" ? "left-[23px]" : "left-[3px]"
+                    )}
+                  />
+                </button>
+              </div>
+
+              {/* Compact Sidebar Toggle */}
+              <div className="flex items-center justify-between py-3.5 border-b border-border">
+                <div>
+                  <div className="text-sm font-medium text-foreground">Compact Sidebar</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">Collapse the sidebar to icon-only mode by default</div>
+                </div>
+                <button
+                  onClick={() => setCompactSidebar(!compactSidebar)}
+                  className={cn(
+                    "h-6 w-11 rounded-full transition-colors relative",
+                    compactSidebar ? "bg-primary" : "bg-muted"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute h-[18px] w-[18px] rounded-full bg-white top-[3px] transition-all",
+                      compactSidebar ? "left-[23px]" : "left-[3px]"
+                    )}
+                  />
+                </button>
+              </div>
+
+              {/* Show Agent Status Dots Toggle */}
+              <div className="flex items-center justify-between py-3.5 border-b border-border">
+                <div>
+                  <div className="text-sm font-medium text-foreground">Show Agent Status Dots</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">Display real-time status indicators next to agent names</div>
+                </div>
+                <button
+                  onClick={() => setShowAgentStatusDots(!showAgentStatusDots)}
+                  className={cn(
+                    "h-6 w-11 rounded-full transition-colors relative",
+                    showAgentStatusDots ? "bg-primary" : "bg-muted"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute h-[18px] w-[18px] rounded-full bg-white top-[3px] transition-all",
+                      showAgentStatusDots ? "left-[23px]" : "left-[3px]"
+                    )}
+                  />
+                </button>
+              </div>
+
+              {/* Animated Transitions Toggle */}
+              <div className="flex items-center justify-between py-3.5">
+                <div>
+                  <div className="text-sm font-medium text-foreground">Animated Transitions</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">Enable smooth animations when switching between pages</div>
+                </div>
+                <button
+                  onClick={() => setAnimatedTransitions(!animatedTransitions)}
+                  className={cn(
+                    "h-6 w-11 rounded-full transition-colors relative",
+                    animatedTransitions ? "bg-primary" : "bg-muted"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute h-[18px] w-[18px] rounded-full bg-white top-[3px] transition-all",
+                      animatedTransitions ? "left-[23px]" : "left-[3px]"
+                    )}
+                  />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Save button for General + Appearance */}
-      {generalDirty && (
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            onClick={handleSaveGeneral}
-            disabled={generalMutation.isPending || !companyName.trim() || !attachmentMaxValid}
-          >
-            {generalMutation.isPending ? "Saving..." : "Save changes"}
-          </Button>
-          {generalMutation.isSuccess && (
-            <span className="text-xs text-muted-foreground">Saved</span>
-          )}
-          {generalMutation.isError && (
-            <span className="text-xs text-destructive">
-              {generalMutation.error instanceof Error
-                  ? generalMutation.error.message
-                  : "Failed to save"}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Hiring */}
-      <div className="space-y-4" data-testid="company-settings-team-section">
-        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Hiring
-        </div>
-        <div className="rounded-md border border-border px-4 py-3">
+        {/* Hiring Card */}
+        <div id="settings-hiring" ref={hiringRef} className="rounded-[14px] border border-border p-6 bg-card" data-testid="company-settings-team-section">
+          <div className="flex items-center gap-3 pb-4 mb-5 border-b border-border">
+            <div className="h-10 w-10 rounded-[10px] bg-emerald-500/15 flex items-center justify-center shrink-0">
+              <Users className="h-5 w-5 text-emerald-500" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Hiring</h2>
+              <p className="text-xs text-muted-foreground">Control how new agents are onboarded</p>
+            </div>
+          </div>
           <ToggleField
             label="Require board approval for new hires"
             hint="New agent hires stay pending until approved by board."
@@ -363,24 +606,28 @@ export function CompanySettings() {
             toggleTestId="company-settings-team-approval-toggle"
           />
         </div>
-      </div>
 
-      {/* Import / Export */}
-      <div className="space-y-4">
-        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Company Packages
-        </div>
-        <div className="rounded-md border border-border px-4 py-4">
-          <p className="text-sm text-muted-foreground">
+        {/* Packages Card */}
+        <div id="settings-packages" ref={packagesRef} className="rounded-[14px] border border-border p-6 bg-card">
+          <div className="flex items-center gap-3 pb-4 mb-5 border-b border-border">
+            <div className="h-10 w-10 rounded-[10px] bg-amber-500/15 flex items-center justify-center shrink-0">
+              <Package className="h-5 w-5 text-amber-500" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Company Packages</h2>
+              <p className="text-xs text-muted-foreground">Import and export company configuration</p>
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
             Import and export have moved to dedicated pages accessible from the{" "}
-            <a href="/org" className="underline hover:text-foreground">Org Chart</a> header.
+            <a href="/org" className="underline hover:text-foreground text-primary">Org Chart</a> header.
           </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {cloudSyncEnabled ? (
               <Button size="sm" asChild>
                 <a href="/company/settings/cloud-upstream">
                   <CloudUpload className="mr-1.5 h-3.5 w-3.5" />
-                  Send to Paperclip Cloud
+                  Send to Humanless AI Cloud
                 </a>
               </Button>
             ) : null}
@@ -398,19 +645,17 @@ export function CompanySettings() {
             </Button>
           </div>
         </div>
-      </div>
 
-      {/* Danger Zone */}
-      <div className="space-y-4">
-        <div className="text-xs font-medium text-destructive uppercase tracking-wide">
-          Danger Zone
-        </div>
-        <div className="space-y-3 rounded-md border border-destructive/40 bg-destructive/5 px-4 py-4">
-          <p className="text-sm text-muted-foreground">
-            Archive this company to hide it from the sidebar. This persists in
-            the database.
+        {/* Danger Zone */}
+        <div className="rounded-[14px] border-[1.5px] border-red-500/25 p-6 bg-card">
+          <div className="flex items-center gap-2.5 pb-4 mb-5 border-b border-red-500/15">
+            <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
+            <h2 className="text-base font-semibold text-red-500">Danger Zone</h2>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4 leading-relaxed">
+            These actions are irreversible. Archiving this company will hide it from the sidebar and persists in the database. Please be certain before proceeding.
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <Button
               size="sm"
               variant="destructive"
@@ -451,6 +696,42 @@ export function CompanySettings() {
             )}
           </div>
         </div>
+
+        {/* Save Bar */}
+        {generalDirty && (
+          <div className="flex items-center justify-between rounded-[14px] border border-border px-6 py-4 bg-card">
+            <span className="text-sm text-muted-foreground">You have unsaved changes</span>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDiscard}
+                className="gap-1.5"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Discard
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSaveGeneral}
+                disabled={generalMutation.isPending || !companyName.trim() || !attachmentMaxValid}
+                className="gap-1.5 bg-gradient-to-r from-primary to-primary/90 shadow-[0_2px_8px_rgba(99,102,241,0.3)]"
+              >
+                {generalMutation.isPending ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+            {generalMutation.isSuccess && (
+              <span className="text-xs text-emerald-500">Saved</span>
+            )}
+            {generalMutation.isError && (
+              <span className="text-xs text-destructive">
+                {generalMutation.error instanceof Error
+                    ? generalMutation.error.message
+                    : "Failed to save"}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

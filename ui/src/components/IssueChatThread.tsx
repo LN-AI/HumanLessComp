@@ -1921,7 +1921,7 @@ function IssueChatFeedbackButtons({
           <DialogHeader>
             <DialogTitle>Save your feedback sharing preference</DialogTitle>
             <DialogDescription>
-              Choose whether voted AI outputs can be shared with Paperclip Labs. This
+              Choose whether voted AI outputs can be shared with Humanless AI Labs. This
               answer becomes the default for future thumbs up and thumbs down votes.
             </DialogDescription>
           </DialogHeader>
@@ -2356,12 +2356,12 @@ function SystemNoticeCommentRow({
   const source = (() => {
     const runAgentName = runAgentId ? agentMap?.get(runAgentId)?.name ?? null : null;
     if (authorType === "system") {
-      const label = runAgentName ?? "Paperclip";
+      const label = runAgentName ?? "Humanless AI";
       if (runAgentId && runId) return { label, href: `/agents/${runAgentId}/runs/${runId}` };
       return { label };
     }
     if (runAgentId && runId) {
-      return { label: authorName ?? runAgentName ?? "Paperclip", href: `/agents/${runAgentId}/runs/${runId}` };
+      return { label: authorName ?? runAgentName ?? "Humanless AI", href: `/agents/${runAgentId}/runs/${runId}` };
     }
     if (authorName) return { label: authorName };
     return undefined;
@@ -3836,6 +3836,13 @@ const IssueChatComposer = forwardRef<IssueChatComposerHandle, IssueChatComposerP
         <Button size="sm" disabled={!canSubmit} onClick={() => void handleSubmit()}>
           {submitting ? "Posting..." : "Send"}
         </Button>
+      </div>
+
+      <div className="flex items-center justify-between mt-2">
+        <div className="flex gap-3 text-[11px] text-muted-foreground/60">
+          <span><kbd className="px-1 py-0.5 bg-secondary rounded text-[10px] font-mono border border-border">⌘</kbd> + <kbd className="px-1 py-0.5 bg-secondary rounded text-[10px] font-mono border border-border">Enter</kbd> to send</span>
+          <span><kbd className="px-1 py-0.5 bg-secondary rounded text-[10px] font-mono border border-border">⌘</kbd> + <kbd className="px-1 py-0.5 bg-secondary rounded text-[10px] font-mono border border-border">K</kbd> for commands</span>
+        </div>
       </div>
     </div>
   );

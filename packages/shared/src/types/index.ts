@@ -23,14 +23,17 @@ export type {
   FeedbackTraceBundleFile,
   FeedbackTraceBundle,
 } from "./feedback.js";
-export type {
-  InstanceExperimentalSettings,
-  InstanceGeneralSettings,
-  InstanceSettings,
-  BackupRetentionPolicy,
-  IssueGraphLivenessAutoRecoveryPreview,
-  IssueGraphLivenessAutoRecoveryPreviewItem,
+export {
+  DEFAULT_INSTANCE_EXECUTION_MODE,
+  type InstanceExecutionMode,
+  type InstanceExperimentalSettings,
+  type InstanceGeneralSettings,
+  type InstanceSettings,
+  type BackupRetentionPolicy,
+  type IssueGraphLivenessAutoRecoveryPreview,
+  type IssueGraphLivenessAutoRecoveryPreviewItem,
 } from "./instance.js";
+
 export {
   DAILY_RETENTION_PRESETS,
   WEEKLY_RETENTION_PRESETS,
