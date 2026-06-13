@@ -22,6 +22,7 @@ services:
     ports:
       - "3100:3100"
     environment:
+      GH_CONFIG_DIR: /home/ubuntu/.config/gh
       DATABASE_URL: postgres://paperclip:paperclip@db:5432/paperclip
       PORT: "3100"
       SERVE_UI: "true"
@@ -31,7 +32,8 @@ services:
       BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set}"
     volumes:
       - paperclip-data:/paperclip
-      - C:/Users/laxminarayan.m/.claude:/paperclip/.claude
+      - /home/ubuntu/.claude:/paperclip/.claude
+      - /home/ubuntu:/home/ubuntu
     depends_on:
       db:
         condition: service_healthy
