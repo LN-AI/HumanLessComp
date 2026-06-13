@@ -19,11 +19,16 @@ export const DEFAULT_BACKUP_RETENTION: BackupRetentionPolicy = {
   monthlyMonths: 1,
 };
 
+export type InstanceExecutionMode = "any" | "kubernetes";
+
+export const DEFAULT_INSTANCE_EXECUTION_MODE: InstanceExecutionMode = "any";
+
 export interface InstanceGeneralSettings {
   censorUsernameInLogs: boolean;
   keyboardShortcuts: boolean;
   feedbackDataSharingPreference: FeedbackDataSharingPreference;
   backupRetention: BackupRetentionPolicy;
+  executionMode: InstanceExecutionMode;
 }
 
 export interface InstanceExperimentalSettings {

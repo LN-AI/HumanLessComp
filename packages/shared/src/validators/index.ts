@@ -1,4 +1,5 @@
 export {
+  instanceExecutionModeSchema,
   instanceGeneralSettingsSchema,
   patchInstanceGeneralSettingsSchema,
   type InstanceGeneralSettings,
